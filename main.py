@@ -63,15 +63,25 @@ class factorio_server:
                 self.load_autosave(target)
             elif (cmd[-1] == "!!help\n"):
                 print("!!shutdown         ->  shutdown the server\n", file = self.server.stdin, flush = True)
+                line = self.server.stdout.readline()
+                print(f"server: {line}", flush = True, end = "")
                 print("!!restart          ->  restart the server\n", file = self.server.stdin, flush = True)
-                print("!!load_autosave m  ->  load the autosaved file m files before current save\n", file = self.server.stdin, flush = True)
-                print("!!save_file        ->  save the current file immediately\n", file = self.server.stdin, flush = True)
-                print("!!load_last_save   ->  load the previously saved file\n", file = self.server.stdin, flush = True)
-            elif (cmd[-1] == "!!save_file\n"):
+                line = self.server.stdout.readline()
+                print(f"server: {line}", flush = True, end = "")
+                print("!!la m             ->  load the autosaved file m files before current save\n", file = self.server.stdin, flush = True)
+                line = self.server.stdout.readline()
+                print(f"server: {line}", flush = True, end = "")
+                print("!!save             ->  save the current file immediately\n", file = self.server.stdin, flush = True)
+                line = self.server.stdout.readline()
+                print(f"server: {line}", flush = True, end = "")
+                print("!!ls               ->  load the previously saved file\n", file = self.server.stdin, flush = True)
+                line = self.server.stdout.readline()
+                print(f"server: {line}", flush = True, end = "")
+            elif (cmd[-1] == "!!save\n"):
                 print("Receive save signal. Saving current file...")
                 print("Receive save signal. Saving current file...\n", file = self.server.stdin, flush = True)
                 self.save_current()
-            elif (cmd[-1] == "!!load_last_save\n"):
+            elif (cmd[-1] == "!!ls\n"):
                 print("Receive load_last_save signal. Loading last save...")
                 print("Receive load_last_save signal. Loading last save...\n", file = self.server.stdin, flush = True)
                 self.load_last_save()
