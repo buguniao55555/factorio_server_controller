@@ -56,7 +56,7 @@ class factorio_server:
                 print("Receive shutdown signal. Shutting down the server...\n", file = self.server.stdin, flush = True)
                 time.sleep(1)
                 self.server.send_signal(signal.SIGINT)
-            elif (cmd[-2] == "!!load_autosave" and cmd[-1][:-1].isdigit()):
+            elif (cmd[-2] == "!!la" and cmd[-1][:-1].isdigit()):
                 print("Receive load_autosave signal. loading autosave...")
                 print("Receive load_autosave signal. loading autosave...\n", file = self.server.stdin, flush = True)
                 target = int(cmd[-1][:-1])
@@ -85,6 +85,14 @@ class factorio_server:
                 print("Receive load_last_save signal. Loading last save...")
                 print("Receive load_last_save signal. Loading last save...\n", file = self.server.stdin, flush = True)
                 self.load_last_save()
+            elif (cmd[-2] == "!!save"):
+                print("Receive save signal. Saving current file...")
+                print("Receive save signal. Saving current file...\n", file = self.server.stdin, flush = True)
+                self.save_current(cmd[-1][:-1])
+            elif (cmd[-2] == "!!ls\n"):
+                print("Receive load_last_save signal. Loading last save...")
+                print("Receive load_last_save signal. Loading last save...\n", file = self.server.stdin, flush = True)
+                self.load_last_save(cmd[-1][:-1])
         return
     
     def run(self):
@@ -104,7 +112,7 @@ class factorio_server:
             if (self.server.poll() is not None):
                 sys.exit(0)
 
-    def save_current(self):
+    def save_current(self, filename:str = "last_save"):
         """
         immediately save the game and save the file to the same folder
         """
@@ -121,14 +129,13 @@ class factorio_server:
         line = line.split(" ")
         if (line[-1] == "finished\n"):
             print("Saving is successful. Copying files now...")
-            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./factorio/saves/last_save_{self.save_name}")
+            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./factorio/saves/{filename}_{self.save_name}")
         else:
             # TODO: what the code should do if saving failed
             print("Saving failed. ")
             pass
 
-
-    def load_last_save(self):
+    def load_last_save(self, filename:str = "last_save"):
         """
         load the targeting last save file. 
         """
@@ -146,11 +153,10 @@ class factorio_server:
         target -= 1
 
         # get autosave files and sort them in last modified time
-        shutil.copy2(f"./factorio/saves/last_save_{self.save_name}", f"./factorio/saves/{self.save_name}")
+        shutil.copy2(f"./factorio/saves/{filename}_{self.save_name}", f"./factorio/saves/{self.save_name}")
 
         # bootup server
         self.server = self.run_server()
-
 
     def load_autosave(self, target: int):
         """
