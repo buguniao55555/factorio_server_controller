@@ -89,7 +89,7 @@ class factorio_server:
                 print("Receive save signal. Saving current file...")
                 print("Receive save signal. Saving current file...\n", file = self.server.stdin, flush = True)
                 self.save_current(cmd[-1][:-1])
-            elif (cmd[-2] == "!!ls\n"):
+            elif (cmd[-2] == "!!ls"):
                 print("Receive load_last_save signal. Loading last save...")
                 print("Receive load_last_save signal. Loading last save...\n", file = self.server.stdin, flush = True)
                 self.load_last_save(cmd[-1][:-1])
