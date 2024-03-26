@@ -149,9 +149,6 @@ class factorio_server:
         self.server.send_signal(signal.SIGINT)
         self.server.wait()
 
-        # move target 1 before for indexing
-        target -= 1
-
         # get autosave files and sort them in last modified time
         shutil.copy2(f"./factorio/saves/{filename}_{self.save_name}", f"./factorio/saves/{self.save_name}")
 
