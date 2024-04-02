@@ -6,11 +6,9 @@ import select
 import os
 from pathlib import Path
 import shutil
+import json
 
-
-startup_command = ["./factorio/bin/x64/factorio", "--port 34197", "--start-server", "./factorio/saves/2024_1_15.zip", "--server-settings", "./factorio/data/server-settings.json"]
-save_name = "2024_1_15.zip"
-
+config_file = "config.json"
 
 class factorio_server:
     """
@@ -18,18 +16,21 @@ class factorio_server:
     """
 
     
-    def __init__(self, save_name) -> None:
+    def __init__(self, config_file: str) -> None:
         # create temp folder for saves
         if (not os.path.exists("temp/")):
             os.makedirs("temp/")
+        with open(config_file) as f:
+            data = json.load(f)
+            self.save_name = data["save_name"]
+            self.startup_command = ["./factorio/bin/x64/factorio", f"--port {data['port']}", "--start-server", f"./factorio/saves/{data['save_name']}", "--server-settings", f"./factorio/data/{data['server_settings']}"]
         # run the server
         self.server = self.run_server()
-        self.save_name = save_name
 
     def run_server(self): 
         # assume this file (main.py) is located in the same folder as the factorio. 
         # set stdin and stdout to pipe, and redirect stderr to stdout. set universal_newlines and bufsize for stdin input. 
-        server = subprocess.Popen(startup_command, stdin = subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
+        server = subprocess.Popen(self.startup_command, stdin = subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
         return server
 
     def restart_server(self):
@@ -38,8 +39,11 @@ class factorio_server:
         self.server.wait()
         self.server = self.run_server()
         pass
+    
+    def print_cmd(self, cmd: str): 
+        pass
 
-    def handle_command(self, cmd: str):
+    def handle_command(self, cmd: str): 
         if(len(cmd) < 26):
             return
         
@@ -199,7 +203,7 @@ class factorio_server:
         if (line[-1] == "finished\n"):
             print("Saving is successful. Copying files now...")
             current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
-            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./temp/{current_time}_{save_name}")
+            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./temp/{current_time}_{self.save_name}")
         else:
             # TODO: what the code should do if saving failed
             print("Saving failed. ")
@@ -219,7 +223,7 @@ def test():
 
 
 
-server = factorio_server(save_name)
+server = factorio_server(config_file)
 
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
