@@ -40,8 +40,10 @@ class factorio_server:
         self.server = self.run_server()
         pass
     
-    def print_cmd(self, cmd: str): 
-        pass
+    def print_to_server(self, cmd: str): 
+        print(cmd, file = self.server.stdin, flush = True)
+        line = self.server.stdout.readline()
+        print(f"server: {line}", flush = True, end = "")
 
     def handle_command(self, cmd: str): 
         if(len(cmd) < 26):
@@ -51,51 +53,38 @@ class factorio_server:
         cmd = cmd.split(" ")
         if (cmd[2] == "[CHAT]"):
             if (cmd[-1] == "!!restart\n"):
-                print("Receive restart signal. Restarting the server...")
-                print("Receive restart signal. Restarting the server...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive restart signal. Restarting the server...")
                 time.sleep(1)
                 self.restart_server()
             elif (cmd[-1] == "!!shutdown\n"):
-                print("Receive shutdown signal. Shutting down the server...")
-                print("Receive shutdown signal. Shutting down the server...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive shutdown signal. Shutting down the server...")
                 time.sleep(1)
                 self.server.send_signal(signal.SIGINT)
             elif (cmd[-2] == "!!la" and cmd[-1][:-1].isdigit()):
-                print("Receive load_autosave signal. loading autosave...")
-                print("Receive load_autosave signal. loading autosave...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive load_autosave signal. loading autosave...")
                 target = int(cmd[-1][:-1])
                 self.load_autosave(target)
+            elif (cmd[-1][:-1] == "!!la"):
+                self.print_to_server("Receive load_autosave signal. loading autosave...")
+                target = 1
+                self.load_autosave(target)
             elif (cmd[-1] == "!!help\n"):
-                print("!!shutdown         ->  shutdown the server\n", file = self.server.stdin, flush = True)
-                line = self.server.stdout.readline()
-                print(f"server: {line}", flush = True, end = "")
-                print("!!restart          ->  restart the server\n", file = self.server.stdin, flush = True)
-                line = self.server.stdout.readline()
-                print(f"server: {line}", flush = True, end = "")
-                print("!!la m             ->  load the autosaved file m files before current save\n", file = self.server.stdin, flush = True)
-                line = self.server.stdout.readline()
-                print(f"server: {line}", flush = True, end = "")
-                print("!!save             ->  save the current file immediately\n", file = self.server.stdin, flush = True)
-                line = self.server.stdout.readline()
-                print(f"server: {line}", flush = True, end = "")
-                print("!!ls               ->  load the previously saved file\n", file = self.server.stdin, flush = True)
-                line = self.server.stdout.readline()
-                print(f"server: {line}", flush = True, end = "")
+                self.print_to_server("!!shutdown         ->  shutdown the server\n")
+                self.print_to_server("!!restart          ->  restart the server\n")
+                self.print_to_server("!!la m             ->  load the autosaved file m files before current save\n")
+                self.print_to_server("!!save             ->  save the current file immediately\n")
+                self.print_to_server("!!ls               ->  load the previously saved file\n")
             elif (cmd[-1] == "!!save\n"):
-                print("Receive save signal. Saving current file...")
-                print("Receive save signal. Saving current file...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive save signal. Saving current file...")
                 self.save_current()
             elif (cmd[-1] == "!!ls\n"):
-                print("Receive load_last_save signal. Loading last save...")
-                print("Receive load_last_save signal. Loading last save...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive load_last_save signal. Loading last save...")
                 self.load_last_save()
             elif (cmd[-2] == "!!save"):
-                print("Receive save signal. Saving current file...")
-                print("Receive save signal. Saving current file...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive save signal. Saving current file...")
                 self.save_current(cmd[-1][:-1])
             elif (cmd[-2] == "!!ls"):
-                print("Receive load_last_save signal. Loading last save...")
-                print("Receive load_last_save signal. Loading last save...\n", file = self.server.stdin, flush = True)
+                self.print_to_server("Receive load_last_save signal. Loading last save...")
                 self.load_last_save(cmd[-1][:-1])
         return
     
@@ -146,7 +135,7 @@ class factorio_server:
 
         # save current game and store it for backup
         self.save_current_game()
-        print(f"loading the last manual saved file", file = self.server.stdin, flush = True)
+        self.print_to_server(f"loading the last manual saved file")
         time.sleep(1)
 
         # shutdown server
@@ -166,7 +155,7 @@ class factorio_server:
 
         # save current game and store it for backup
         self.save_current_game()
-        print(f"loading the autosave {target} files before...", file = self.server.stdin, flush = True)
+        self.print_to_server(f"loading the autosave {target} files before...")
         time.sleep(1)
 
         # shutdown server
@@ -191,8 +180,6 @@ class factorio_server:
         """
         print("/server-save", file = self.server.stdin, flush = True)
         # Check if saving is successful
-        line = self.server.stdout.readline()
-        print(f"server: {line}", flush = True, end = "")
         line = self.server.stdout.readline()
         print(f"server: {line}", flush = True, end = "")
         line = self.server.stdout.readline()
