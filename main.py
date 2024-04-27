@@ -9,6 +9,8 @@ import shutil
 import json
 
 config_file = "config.json"
+MAX_MANUAL_SAVE = 100   # set largest manual save number
+FILE_PER_PAGE = 5
 
 class factorio_server:
     """
@@ -17,13 +19,12 @@ class factorio_server:
 
     
     def __init__(self, config_file: str) -> None:
-        # create temp folder for saves
-        if (not os.path.exists("temp/")):
-            os.makedirs("temp/")
         with open(config_file) as f:
             data = json.load(f)
             self.save_name = data["save_name"]
             self.startup_command = ["./factorio/bin/x64/factorio", f"--port {data['port']}", "--start-server", f"./factorio/saves/{data['save_name']}", "--server-settings", f"./factorio/data/{data['server_settings']}"]
+        # check if save folder is created
+        Path(f"saves/{self.save_name}").mkdir(parents=True, exist_ok=True)
         # run the server
         self.server = self.run_server()
 
@@ -71,21 +72,22 @@ class factorio_server:
             elif (cmd[-1] == "!!help\n"):
                 self.print_to_server("!!shutdown         ->  shutdown the server\n")
                 self.print_to_server("!!restart          ->  restart the server\n")
-                self.print_to_server("!!la m             ->  load the autosaved file m files before current save\n")
+                self.print_to_server("!!la m             ->  load the autosaved file m files before current save, default m = 1\n")
                 self.print_to_server("!!save             ->  save the current file immediately\n")
                 self.print_to_server("!!ls               ->  load the previously saved file\n")
+                self.print_to_server("!!ls ?             ->  check all saved file and restore from them\n")
             elif (cmd[-1] == "!!save\n"):
                 self.print_to_server("Receive save signal. Saving current file...")
-                self.save_current()
+                self.save_current("request_save", cmd[3][:-1])
             elif (cmd[-1] == "!!ls\n"):
                 self.print_to_server("Receive load_last_save signal. Loading last save...")
                 self.load_last_save()
             elif (cmd[-2] == "!!save"):
                 self.print_to_server("Receive save signal. Saving current file...")
-                self.save_current(cmd[-1][:-1])
-            elif (cmd[-2] == "!!ls"):
-                self.print_to_server("Receive load_last_save signal. Loading last save...")
-                self.load_last_save(cmd[-1][:-1])
+                self.save_current(cmd[-1][:-1], cmd[3][:-1])
+            elif (cmd[-2] == "!!ls" and cmd[-1][:-1] == "?"):
+                self.load_requested_save()
+            
         return
     
     def run(self):
@@ -105,7 +107,7 @@ class factorio_server:
             if (self.server.poll() is not None):
                 sys.exit(0)
 
-    def save_current(self, filename:str = "last_save"):
+    def save_current(self, filename:str = "autosave", commander: str = "server"):
         """
         immediately save the game and save the file to the same folder
         """
@@ -117,24 +119,23 @@ class factorio_server:
         print(f"server: {line}", flush = True, end = "")
         line = self.server.stdout.readline()
         print(f"server: {line}", flush = True, end = "")
-        line = self.server.stdout.readline()
-        print(f"server: {line}", flush = True, end = "")
         line = line.split(" ")
         if (line[-1] == "finished\n"):
             print("Saving is successful. Copying files now...")
-            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./factorio/saves/{filename}_{self.save_name}")
+            current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
+            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./saves/{self.save_name}/{current_time}_{filename}_{commander}")
         else:
             # TODO: what the code should do if saving failed
             print("Saving failed. ")
             pass
 
-    def load_last_save(self, filename:str = "last_save"):
+    def load_last_save(self):
         """
         load the targeting last save file. 
         """
 
         # save current game and store it for backup
-        self.save_current_game()
+        self.save_current()
         self.print_to_server(f"loading the last manual saved file")
         time.sleep(1)
 
@@ -143,7 +144,10 @@ class factorio_server:
         self.server.wait()
 
         # get autosave files and sort them in last modified time
-        shutil.copy2(f"./factorio/saves/{filename}_{self.save_name}", f"./factorio/saves/{self.save_name}")
+        save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
+        save_files = list(i for i in save_files if ("autosave_server" not in str(i)))
+        target_autosave = save_files[0]
+        shutil.copy2(target_autosave, f"./factorio/saves/{self.save_name}")
 
         # bootup server
         self.server = self.run_server()
@@ -154,7 +158,7 @@ class factorio_server:
         """
 
         # save current game and store it for backup
-        self.save_current_game()
+        self.save_current()
         self.print_to_server(f"loading the autosave {target} files before...")
         time.sleep(1)
 
@@ -174,28 +178,75 @@ class factorio_server:
         # bootup server
         self.server = self.run_server()
 
-    def save_current_game(self):
+    def load_requested_save(self):
         """
-        immediately save the game and save the file to a temp folder in case something went wrong
+        load the targeting last save file. 
         """
-        print("/server-save", file = self.server.stdin, flush = True)
-        # Check if saving is successful
-        line = self.server.stdout.readline()
-        print(f"server: {line}", flush = True, end = "")
-        line = self.server.stdout.readline()
-        print(f"server: {line}", flush = True, end = "")
-        line = self.server.stdout.readline()
-        print(f"server: {line}", flush = True, end = "")
-        line = line.split(" ")
-        if (line[-1] == "finished\n"):
-            print("Saving is successful. Copying files now...")
-            current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
-            shutil.copy2(f"./factorio/saves/{self.save_name}", f"./temp/{current_time}_{self.save_name}")
-        else:
-            # TODO: what the code should do if saving failed
-            print("Saving failed. ")
-            pass
+        # get autosave files and sort them in last modified time
+        save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
+        save_files = list(save_files)
+        target_save = None
+
+        self.print_to_server(f"choose the save you wish to recover")
+        self.print_to_server(f"enter the index to choose the save file, n to view previous page, m to view next page, or q to quit")
+        page_index = 0
+        while True:
+            for i in range(page_index, min(page_index + FILE_PER_PAGE, len(save_files))):
+                self.print_to_server(f"{i - page_index + 1}: {save_files[i]}")
+            while True:
+                while True:
+                    cmd = None
+                    read_fds = [self.server.stdout, sys.stdin]
+                    read_fds, _, _ = select.select(read_fds, [], [])
+                    for fd in read_fds:
+                        # if got something in sys.stdin, send it to the factorio server. 
+                        if (fd == sys.stdin):
+                            line = sys.stdin.readline()
+                            print(line, file = self.server.stdin, flush = True)
+                        else: # if got something in server.stdout, print it to sys.out. 
+                            cmd = self.server.stdout.readline()
+                            print(f"server: {cmd}", flush = True, end = "")
+                    if (cmd is not None):
+                        break
+                cmd = cmd.split(" ")
+                if (cmd[2] == "[CHAT]"):
+                    if (cmd[-1][:-1] == "m"):
+                        if (page_index + FILE_PER_PAGE < len(save_files)):
+                            page_index += FILE_PER_PAGE
+                        else:
+                            self.print_to_server("this is the last page. ")
+                    elif (cmd[-1][:-1] == "n"):
+                        if (page_index - FILE_PER_PAGE >= 0):
+                            page_index -= FILE_PER_PAGE
+                        else:
+                            self.print_to_server("this is the first page. ")
+                    elif (cmd[-1][:-1] == "q"):
+                        return
+                    elif (cmd[-1][:-1].isdigit()):
+                        req_index = int(cmd[-1][:-1])
+                        if (req_index > page_index + FILE_PER_PAGE):
+                            self.print_to_server("invalid file number. ")
+                        else:
+                            target_save = save_files[page_index + req_index - 1]
+                    break
+            if (target_save is not None):
+                break
         
+            
+
+        # save current game and store it for backup
+        self.save_current()
+
+        # shutdown server
+        self.server.send_signal(signal.SIGINT)
+        self.server.wait()
+
+        # get request file and copy to game save folder
+        shutil.copy2(target_save, f"./factorio/saves/{self.save_name}")
+
+        # bootup server
+        self.server = self.run_server()
+
 
 def test():
     p = subprocess.Popen(["python3", "out.py", "-l"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
