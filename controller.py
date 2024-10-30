@@ -36,29 +36,48 @@ class factorio_server:
         # run the server
         self.server = self.run_server()
 
+    # 
     def run_server(self): 
-        # set stdin and stdout to pipe, and redirect stderr to stdout. set universal_newlines and bufsize for stdin input. 
+        """ 
+        Set stdin and stdout to pipe, and redirect stderr to stdout. set universal_newlines and bufsize for stdin input. 
+        """
         server = subprocess.Popen(self.startup_command, stdin = subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
         return server
 
     def restart_server(self):
-        # send ctrl-c to the factorio server, then wait for it to close and run a new one. 
+        """
+        Send ctrl-c to the factorio server, then wait for it to close and run a new one. 
+        """
         self.server.send_signal(signal.SIGINT)
         self.server.wait()
         self.server = self.run_server()
         pass
     
     def print_to_server(self, cmd: str): 
+        """ Print command to factorio server
+
+        Args:
+            cmd (str): input commands
+        """
         print(cmd, file = self.server.stdin, flush = True)
         line = self.server.stdout.readline()
         print(f"server: {line}", flush = True, end = "")
 
     def handle_command(self, cmd: str): 
+        """ Read outputs from server and handle them
+
+        Args:
+            cmd (str): output commands
+        """
+
+        # if unrelated cmd, return
         if(len(cmd) < 26):
             return
         
-        # if command is "\restart" then restart the server. 
+        # check commands and react to them
         cmd = cmd.split(" ")
+
+        # if command from chat, check if there's any available commands
         if (cmd[2] == "[CHAT]"):
             if (cmd[-1] == "!!restart\n"):
                 self.print_to_server("Receive restart signal. Restarting the server...")
@@ -68,14 +87,20 @@ class factorio_server:
                 self.print_to_server("Receive shutdown signal. Shutting down the server...")
                 time.sleep(1)
                 self.server.send_signal(signal.SIGINT)
+
+            # load the designated autosave
             elif (cmd[-2] == "!!la" and cmd[-1][:-1].isdigit()):
                 self.print_to_server("Receive load_autosave signal. loading autosave...")
                 target = int(cmd[-1][:-1])
                 self.load_autosave(target)
+
+            # load the latest autosave
             elif (cmd[-1][:-1] == "!!la"):
                 self.print_to_server("Receive load_autosave signal. loading autosave...")
                 target = 1
                 self.load_autosave(target)
+
+            # print out help menu
             elif (cmd[-1] == "!!help\n"):
                 self.print_to_server("!!shutdown         ->  shutdown the server\n")
                 self.print_to_server("!!restart          ->  restart the server\n")
@@ -83,15 +108,23 @@ class factorio_server:
                 self.print_to_server("!!save             ->  save the current file immediately\n")
                 self.print_to_server("!!ls               ->  load the previously saved file\n")
                 self.print_to_server("!!ls ?             ->  check all saved file and restore from them\n")
+
+            # save current save
             elif (cmd[-1] == "!!save\n"):
                 self.print_to_server("Receive save signal. Saving current file...")
                 self.save_current("request_save", cmd[3][:-1])
+
+            # load the latest save
             elif (cmd[-1] == "!!ls\n"):
                 self.print_to_server("Receive load_last_save signal. Loading last save...")
                 self.load_last_save()
+            
+            # save current save with custom name
             elif (cmd[-2] == "!!save"):
                 self.print_to_server("Receive save signal. Saving current file...")
                 self.save_current(cmd[-1][:-1], cmd[3][:-1])
+
+            # print out all saved files and let user to choose which to restore
             elif (cmd[-2] == "!!ls" and cmd[-1][:-1] == "?"):
                 self.load_requested_save()
             
@@ -235,7 +268,12 @@ class factorio_server:
                             self.print_to_server("invalid file number. ")
                         else:
                             target_save = save_files[page_index + req_index - 1]
-                    break
+                            break
+                    else:
+                        self.print_to_server("you are currently in save recover mode. ")
+                        self.print_to_server(f"choose the save you wish to recover. ")
+                        self.print_to_server(f"enter the index to choose the save file, n to view previous page, m to view next page, or q to quit. ")
+                        break
             if (target_save is not None):
                 break
         
