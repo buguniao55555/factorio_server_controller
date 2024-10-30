@@ -1,0 +1,7 @@
+{
+    "save_name": "example.zip",
+    "port": "34197",
+    "server_settings": "server_settings.json", 
+    "factorio_directory": "./factorio/bin/x64/factorio",
+    "startup_command": "None"
+}
