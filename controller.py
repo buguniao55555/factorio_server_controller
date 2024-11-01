@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import json
+from urllib.request import Request, urlopen
 
 config_file = "config.json"
 MAX_MANUAL_SAVE = 100   # set largest manual save number
@@ -291,6 +292,14 @@ class factorio_server:
 
         # bootup server
         self.server = self.run_server()
+
+    def auto_update():
+        # get the latest headless server version and check local version
+        req = Request(
+            url='https://factorio.com/api/latest-releases', 
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        latest = json.loads(urlopen(req).read().decode('utf-8'))["stable"]["headless"]
 
 
 def test():
