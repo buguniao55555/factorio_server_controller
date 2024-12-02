@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import json
 from urllib.request import Request, urlopen
+from typing import Union
 
 config_file = "config.json"
 MAX_MANUAL_SAVE = 100   # set largest manual save number
@@ -60,7 +61,7 @@ class factorio_server:
         Args:
             cmd (str): input commands
         """
-        print(cmd, file = self.server.stdin, flush = True)
+        print(f"[color={color}]" + cmd + "[/color]", file = self.server.stdin, flush = True)
         line = self.server.stdout.readline()
         print(f"server: {line}", flush = True, end = "")
 
@@ -218,6 +219,64 @@ class factorio_server:
 
         # bootup server
         self.server = self.run_server()
+        
+    def get_next_msg(self):
+        """
+        get the next message from server.stdout or sys.stdin and route it to the corresponding port.
+        also return the message if it's from server.stdout.
+        """
+        while True:
+            cmd = None
+            read_fds = [self.server.stdout, sys.stdin]
+            read_fds, _, _ = select.select(read_fds, [], [])
+            for fd in read_fds:
+                # if got something in sys.stdin, send it to the factorio server. 
+                if (fd == sys.stdin):
+                    line = sys.stdin.readline()
+                    print(line, file = self.server.stdin, flush = True)
+                else: # if got something in server.stdout, print it to sys.out. 
+                    cmd = self.server.stdout.readline()
+                    print(f"server: {cmd}", flush = True, end = "")
+            if (cmd is not None):
+                return cmd
+
+    def handle_user_act_to_ls(self, cmd: str, page_index: int, save_files: list):
+        """
+        handle user's action to the save file list.
+        Args:
+            cmd: the user's command
+            page_index: the current page index
+            save_files: the list of save files
+        Returns:
+            page_index: the updated page index
+            target_save: the target save file
+        """
+        if (cmd[-1][:-1] == "m"):
+            if (page_index + FILE_PER_PAGE < len(save_files)):
+                page_index += FILE_PER_PAGE
+            else:
+                self.print_to_server("[color=red]ERROR: this is the last page.[/color]")
+        elif (cmd[-1][:-1] == "n"):
+            if (page_index - FILE_PER_PAGE >= 0):
+                page_index -= FILE_PER_PAGE
+            else:
+                self.print_to_server("[color=red]ERROR: this is the first page.[/color]")
+        elif (cmd[-1][:-1] == "q"):
+            return page_index, None
+        elif (cmd[-1][:-1] == "?"):
+            return page_index, None
+        elif (cmd[-1][:-1].isdigit()):
+            req_index = int(cmd[-1][:-1])
+            if (req_index > FILE_PER_PAGE or req_index <= 0):
+                self.print_to_server("invalid file number. ")
+            else:
+                return page_index, save_files[page_index + req_index - 1]
+        else:
+            self.print_to_server("you are currently in save recover mode. ")
+            self.print_to_server(f"choose the save you wish to recover. ")
+            self.print_to_server(f"enter the index to choose the save file, [color=#FF3F3F]n[/color] to view previous page, [color=#FF3F3F]m[/color] to view next page, or [color=#FF3F3F]q[/color] to quit.")
+        
+        return page_index, None
 
     def load_requested_save(self):
         """
@@ -228,57 +287,18 @@ class factorio_server:
         save_files = list(save_files)
         target_save = None
 
-        self.print_to_server(f"choose the save you wish to recover")
-        self.print_to_server(f"enter the index to choose the save file, n to view previous page, m to view next page, or q to quit")
+        self.print_to_server("choose the save you wish to recover")
         page_index = 0
-        while True:
+        while target_save is None:
+            self.print_to_server("enter the index to choose the save file, [color=#FF3F3F]n[/color] to view previous page, [color=#FF3F3F]m[/color] to view next page, or [color=#FF3F3F]q[/color] to quit")
             for i in range(page_index, min(page_index + FILE_PER_PAGE, len(save_files))):
-                self.print_to_server(f"{i - page_index + 1}: {save_files[i]}")
+                self.print_to_server(f"    [color=#FF3F3F][{i - page_index + 1}][/color]: {save_files[i]}")
             while True:
-                while True:
-                    cmd = None
-                    read_fds = [self.server.stdout, sys.stdin]
-                    read_fds, _, _ = select.select(read_fds, [], [])
-                    for fd in read_fds:
-                        # if got something in sys.stdin, send it to the factorio server. 
-                        if (fd == sys.stdin):
-                            line = sys.stdin.readline()
-                            print(line, file = self.server.stdin, flush = True)
-                        else: # if got something in server.stdout, print it to sys.out. 
-                            cmd = self.server.stdout.readline()
-                            print(f"server: {cmd}", flush = True, end = "")
-                    if (cmd is not None):
-                        break
+                cmd = self.get_next_msg()
                 cmd = cmd.split(" ")
                 if (cmd[2] == "[CHAT]"):
-                    if (cmd[-1][:-1] == "m"):
-                        if (page_index + FILE_PER_PAGE < len(save_files)):
-                            page_index += FILE_PER_PAGE
-                        else:
-                            self.print_to_server("this is the last page. ")
-                    elif (cmd[-1][:-1] == "n"):
-                        if (page_index - FILE_PER_PAGE >= 0):
-                            page_index -= FILE_PER_PAGE
-                        else:
-                            self.print_to_server("this is the first page. ")
-                    elif (cmd[-1][:-1] == "q"):
-                        return
-                    elif (cmd[-1][:-1].isdigit()):
-                        req_index = int(cmd[-1][:-1])
-                        if (req_index > page_index + FILE_PER_PAGE):
-                            self.print_to_server("invalid file number. ")
-                        else:
-                            target_save = save_files[page_index + req_index - 1]
-                            break
-                    else:
-                        self.print_to_server("you are currently in save recover mode. ")
-                        self.print_to_server(f"choose the save you wish to recover. ")
-                        self.print_to_server(f"enter the index to choose the save file, n to view previous page, m to view next page, or q to quit. ")
-                        break
-            if (target_save is not None):
-                break
-        
-            
+                    page_index, target_save = self.handle_user_act_to_ls(cmd, page_index, save_files)
+                    break
 
         # save current game and store it for backup
         self.save_current()
@@ -293,8 +313,8 @@ class factorio_server:
         # bootup server
         self.server = self.run_server()
 
-    def auto_update():
-        # get the latest headless server version and check local version
+    def auto_update(self):
+        """get the latest headless server version and check local version"""
         req = Request(
             url='https://factorio.com/api/latest-releases', 
             headers={'User-Agent': 'Mozilla/5.0'}
