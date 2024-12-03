@@ -17,10 +17,8 @@ class factorio_server:
     """
     Note that due to the fact that the subprocess will forward the CTRL C command (SIGINT) to the subprocess, a shutdown function is not needed. 
     """
-
     
     def __init__(self, config_file: str) -> None:
-
         # read the config.json file and initialize startup command
         with open(config_file, encoding="utf-8") as f:
             data = json.load(f)
@@ -37,7 +35,6 @@ class factorio_server:
         # run the server
         self.server = self.run_server()
 
-    # 
     def run_server(self): 
         """ 
         Set stdin and stdout to pipe, and redirect stderr to stdout. set universal_newlines and bufsize for stdin input. 
@@ -52,7 +49,6 @@ class factorio_server:
         self.server.send_signal(signal.SIGINT)
         self.server.wait()
         self.server = self.run_server()
-        pass
     
     def print_to_server(self, cmd: str): 
         """ Print command to factorio server
@@ -72,7 +68,7 @@ class factorio_server:
         """
 
         # if unrelated cmd, return
-        if(len(cmd) < 26):
+        if (len(cmd) < 26):
             return
         
         # check commands and react to them
@@ -133,18 +129,7 @@ class factorio_server:
     
     def run(self):
         while True:
-            # listen to both server.stdout and sys.stdin. 
-            read_fds = [self.server.stdout, sys.stdin]
-            read_fds, _, _ = select.select(read_fds, [], [])
-            for fd in read_fds:
-                # if got something in sys.stdin, send it to the factorio server. 
-                if (fd == sys.stdin):
-                    line = sys.stdin.readline()
-                    print(line, file = self.server.stdin, flush = True)
-                else: # if got something in server.stdout, print it to sys.out. 
-                    line = self.server.stdout.readline()
-                    print(f"server: {line}", flush = True, end = "")
-                    self.handle_command(line)
+            self.wget_next_msg(handle=self.handle_command)
             if (self.server.poll() is not None):
                 sys.exit(0)
 
@@ -218,25 +203,27 @@ class factorio_server:
         # bootup server
         self.server = self.run_server()
         
-    def get_next_msg(self):
+    def wget_next_msg(self, handle = None):
         """
-        get the next message from server.stdout or sys.stdin and route it to the corresponding port.
+        wait to get next message from server.stdout or sys.stdin and route it to the corresponding port.
         also return the message if it's from server.stdout.
+        Args:
+            handle (optional): the function to handle the message from server.stdout
         """
-        while True:
-            cmd = None
-            read_fds = [self.server.stdout, sys.stdin]
-            read_fds, _, _ = select.select(read_fds, [], [])
-            for fd in read_fds:
-                # if got something in sys.stdin, send it to the factorio server. 
-                if (fd == sys.stdin):
-                    line = sys.stdin.readline()
-                    print(line, file = self.server.stdin, flush = True)
-                else: # if got something in server.stdout, print it to sys.out. 
-                    cmd = self.server.stdout.readline()
-                    print(f"server: {cmd}", flush = True, end = "")
-            if (cmd is not None):
-                return cmd
+        cmd = None
+        read_fds = [self.server.stdout, sys.stdin]
+        read_fds, _, _ = select.select(read_fds, [], [])
+        for fd in read_fds:
+            # if got something in sys.stdin, send it to the factorio server. 
+            if (fd == sys.stdin):
+                line = sys.stdin.readline()
+                print(line, file = self.server.stdin, flush = True)
+            else: # if got something in server.stdout, print it to sys.out. 
+                cmd = self.server.stdout.readline()
+                print(f"server: {cmd}", flush = True, end = "")
+                if (handle is not None):
+                    handle(cmd)
+        return cmd
 
     def handle_user_act_to_ls(self, cmd: str, page_index: int, n_files: int):
         """
@@ -251,20 +238,20 @@ class factorio_server:
         """
         new_page_index = page_index
         req_index = None
-        if (cmd[-1][:-1] == "m"):
+        if (cmd[:-1] == "m"):
             if (page_index + FILE_PER_PAGE < n_files):
                 new_page_index += FILE_PER_PAGE
             else:
                 self.print_to_server("[color=red]ERROR: this is the last page.[/color]")
-        elif (cmd[-1][:-1] == "n"):
+        elif (cmd[:-1] == "n"):
             if (page_index - FILE_PER_PAGE >= 0):
                 new_page_index -= FILE_PER_PAGE
             else:
                 self.print_to_server("[color=red]ERROR: this is the first page.[/color]")
-        elif (cmd[-1][:-1] == "q"):
+        elif (cmd[:-1] == "q"):
             new_page_index = None
-        elif (cmd[-1][:-1].isdigit()):
-            req_index = int(cmd[-1][:-1])
+        elif (cmd[:-1].isdigit()):
+            req_index = int(cmd[:-1])
             if (req_index > FILE_PER_PAGE or req_index <= 0):
                 self.print_to_server("invalid file number. ")
                 req_index = None
@@ -294,28 +281,38 @@ class factorio_server:
         """
         # get autosave files and sort them in last modified time
         save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
-        save_files = list(self.parse_file_name(sf) for sf in save_files)
+        save_files = list(save_files)
         n_files = len(save_files)
         target_save = None
 
         self.print_to_server("choose the save you wish to recover")
         page_index = 0
         while target_save is None:
+            # interact with user until selected a save file or manually quit
             self.print_to_server("enter the index to choose the save file, [color=#FF3F3F]n[/color] to view previous page, [color=#FF3F3F]m[/color] to view next page, or [color=#FF3F3F]q[/color] to quit.")
             for i in range(page_index, min(page_index + FILE_PER_PAGE, n_files)):
-                self.print_to_server(f"    [color=#FF3F3F][{i - page_index + 1}][/color]: {save_files[i]}")
+                self.print_to_server(f"    [color=#FF3F3F][{i - page_index + 1}][/color]: {self.parse_file_name(save_files[i])}")
+            cmd = None
             while True:
-                cmd = self.get_next_msg()
+                # get next message until it's from server.stdout and [CHAT]
+                cmd = self.wget_next_msg()
+                if (cmd is None):
+                    # message not from server.stdout
+                    continue
                 cmd = cmd.split(" ")
-                if (cmd[2] == "[CHAT]"):
-                    page_index, req_index = self.handle_user_act_to_ls(cmd, page_index, n_files)
-                    if (page_index is None):
-                        # pressed 'q' for quit
-                        self.print_to_server("quit save recover mode.")
-                        return
-                    if (req_index is not None):
-                        target_save = save_files[page_index + req_index - 1]
+                if (len(cmd) > 2 and cmd[2] == "[CHAT]"):
+                    # message from server.stdout and [CHAT]
+                    cmd = cmd[-1]
                     break
+            
+            page_index, req_index = self.handle_user_act_to_ls(cmd, page_index, n_files)
+            if (page_index is None):
+                # pressed 'q' for quit
+                self.print_to_server("quit save recover mode.")
+                return
+            if (req_index is not None):
+                target_save = save_files[page_index + req_index - 1]
+                break
 
         # save current game and store it for backup
         self.save_current()
