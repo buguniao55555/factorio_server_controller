@@ -1,6 +1,0 @@
-{
-    "python.terminal.shellIntegration.enabled": true,
-    "python.autoComplete.extraPaths": [
-        
-    ]
-}
