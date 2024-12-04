@@ -13,7 +13,7 @@ CONFIG_FILE = "config.json"
 MAX_MANUAL_SAVE = 100   # set largest manual save number
 FILE_PER_PAGE = 5       # max file display in one page (for saves lookup)
 
-class factorio_server:
+class FactorioController:
     """
     Note that due to the fact that the subprocess will forward the CTRL C command (SIGINT) to the subprocess, a shutdown function is not needed. 
     """
@@ -21,34 +21,40 @@ class factorio_server:
     def __init__(self, config_file: str) -> None:
         # read the config.json file and initialize startup command
         with open(config_file, encoding="utf-8") as f:
-            data = json.load(f)
+            config = json.load(f)
             # if no customized command, use default startup
-            if (data["startup_command"] == "None"): 
-                self.save_name = data["save_name"]
-                self.factorio_dir = data["factorio_directory"]
-                self.startup_command = [self.factorio_dir, f"--port {data['port']}", "--start-server", f"./factorio/saves/{data['save_name']}", "--server-settings", f"./factorio/data/{data['server_settings']}"]
+            if (config["startup_command"] == "None"): 
+                self.save_name = config["save_name"]
+                self.factorio_dir = config["factorio_directory"]
+                self.startup_command = [self.factorio_dir, f"--port {config['port']}", "--start-server", f"./factorio/saves/{config['save_name']}", "--server-settings", f"./factorio/data/{config['server_settings']}"]
             else:   # if there is customized command, use it
-                self.startup_command = data["startup_command"]
+                self.startup_command = config["startup_command"]
         
         # check if save folder is created
         Path(f"saves/{self.save_name}").mkdir(parents=True, exist_ok=True)
         # run the server
-        self.server = self.run_server()
+        self.start_server()
 
-    def run_server(self): 
+    def start_server(self):
         """ 
         Set stdin and stdout to pipe, and redirect stderr to stdout. set universal_newlines and bufsize for stdin input. 
         """
-        _server = subprocess.Popen(self.startup_command, stdin = subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
-        return _server
-
-    def restart_server(self):
-        """
-        Send ctrl-c to the factorio server, then wait for it to close and run a new one. 
+        server = subprocess.Popen(self.startup_command, stdin = subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
+        self.server = server
+    
+    def stop_server(self):
+        """ 
+        Send ctrl-c to the factorio server, then wait for it to close. 
         """
         self.server.send_signal(signal.SIGINT)
         self.server.wait()
-        self.server = self.run_server()
+
+    def restart_server(self):
+        """
+        Restart the factorio server by stopping and starting it again.
+        """
+        self.stop_server()
+        self.start_server()
     
     def print_to_server(self, cmd: str): 
         """ Print command to factorio server
@@ -126,7 +132,7 @@ class factorio_server:
                 self.load_requested_save()
             
         return
-    
+
     def run(self):
         while True:
             self.wget_next_msg(handle=self.handle_command)
@@ -165,8 +171,7 @@ class factorio_server:
         time.sleep(1)
 
         # shutdown server
-        self.server.send_signal(signal.SIGINT)
-        self.server.wait()
+        self.stop_server()
 
         # get autosave files and sort them in last modified time
         save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
@@ -175,7 +180,7 @@ class factorio_server:
         shutil.copy2(target_autosave, f"./factorio/saves/{self.save_name}")
 
         # bootup server
-        self.server = self.run_server()
+        self.start_server()
 
     def load_autosave(self, target: int):
         """
@@ -188,8 +193,7 @@ class factorio_server:
         time.sleep(1)
 
         # shutdown server
-        self.server.send_signal(signal.SIGINT)
-        self.server.wait()
+        self.stop_server()
 
         # move target 1 before for indexing
         target -= 1
@@ -201,7 +205,7 @@ class factorio_server:
         shutil.copy2(target_autosave, f"./factorio/saves/{self.save_name}")
 
         # bootup server
-        self.server = self.run_server()
+        self.start_server()
         
     def wget_next_msg(self, handle = None):
         """
@@ -318,14 +322,13 @@ class factorio_server:
         self.save_current()
 
         # shutdown server
-        self.server.send_signal(signal.SIGINT)
-        self.server.wait()
+        self.stop_server()
 
         # get request file and copy to game save folder
         shutil.copy2(target_save, f"./factorio/saves/{self.save_name}")
 
         # bootup server
-        self.server = self.run_server()
+        self.start_server()
 
     def auto_update(self):
         """get the latest headless server version and check local version"""
@@ -349,9 +352,10 @@ def test():
 
 
 
-server = factorio_server(CONFIG_FILE)
+controller = FactorioController(CONFIG_FILE)
 
+# ignore the SIGINT signal from the terminal
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 if __name__ == "__main__":
-    server.run()
+    controller.run()

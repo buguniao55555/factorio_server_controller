@@ -6,3 +6,5 @@ linux64
 nohup.out
 startserver.sh
 saves
+
+.vscode
