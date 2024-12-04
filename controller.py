@@ -56,13 +56,16 @@ class FactorioController:
         self.stop_server()
         self.start_server()
     
-    def print_to_server(self, cmd: str): 
-        """ Print command to factorio server
-
-        Args:
-            cmd (str): input commands
+    def print_to_server(self, msg: str, username: str = ""):
         """
-        print(cmd, file = self.server.stdin, flush = True)
+        Print command to factorio server
+        Args:
+            msg (str): input commands
+        """
+        if (username == ""):
+            print(msg, file = self.server.stdin, flush = True)
+        else:
+            print(f"/w {username} {msg}", file = self.server.stdin, flush = True)
         line = self.server.stdout.readline()
         print(f"server: {line}", flush = True, end = "")
 
@@ -89,7 +92,7 @@ class FactorioController:
             elif (cmd[-1] == "!!shutdown\n"):
                 self.print_to_server("Receive shutdown signal. Shutting down the server...")
                 time.sleep(1)
-                self.server.send_signal(signal.SIGINT)
+                self.stop_server()
 
             # load the designated autosave
             elif (cmd[-2] == "!!la" and cmd[-1][:-1].isdigit()):
@@ -105,12 +108,13 @@ class FactorioController:
 
             # print out help menu
             elif (cmd[-1] == "!!help\n"):
-                self.print_to_server("!!shutdown         ->  shutdown the server\n")
-                self.print_to_server("!!restart          ->  restart the server\n")
-                self.print_to_server("!!la m             ->  load the autosaved file m files before current save, default m = 1\n")
-                self.print_to_server("!!save             ->  save the current file immediately\n")
-                self.print_to_server("!!ls               ->  load the previously saved file\n")
-                self.print_to_server("!!ls ?             ->  check all saved file and restore from them\n")
+                username = cmd[3][:-1]
+                self.print_to_server("!!shutdown         ->  shutdown the server\n", username)
+                self.print_to_server("!!restart          ->  restart the server\n", username)
+                self.print_to_server("!!la m             ->  load the autosaved file m files before current save, default m = 1\n", username)
+                self.print_to_server("!!save             ->  save the current file immediately\n", username)
+                self.print_to_server("!!ls               ->  load the previously saved file\n", username)
+                self.print_to_server("!!ls ?             ->  check all saved file and restore from them\n", username)
 
             # save current save
             elif (cmd[-1] == "!!save\n"):
@@ -189,7 +193,7 @@ class FactorioController:
 
         # save current game and store it for backup
         self.save_current()
-        self.print_to_server(f"loading the autosave {target} files before...")
+        self.print_to_server(f"loading the autosave {target} file(s) before...")
         time.sleep(1)
 
         # shutdown server
