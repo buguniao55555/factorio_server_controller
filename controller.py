@@ -190,52 +190,46 @@ class FactorioController:
             # TODO: what the code should do if saving failed
             print("Saving failed. ")
 
-    def load_last_save(self):
-        """
-        load the targeting last save file. 
-        """
-
+    def load_requested_save(self, target_save: Path):
         # save current game and store it for backup
         self.save_current()
-        self.print_to_server("loading the last manual saved file")
         time.sleep(1)
 
         # shutdown server
         self.stop_server()
 
-        # get autosave files and sort them in last modified time
-        save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
-        save_files = list(i for i in save_files if ("autosave_server" not in str(i)))
-        target_autosave = save_files[0]
-        shutil.copy2(target_autosave, f"./factorio/saves/{self.save_name}")
+        # get request file and copy to game save folder
+        shutil.copy2(target_save, f"./factorio/saves/{self.save_name}")
 
         # bootup server
         self.start_server()
+
+    def load_last_save(self):
+        """
+        load the targeting last save file. 
+        """
+        # get manual save files and sort them in last modified time
+        save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
+        save_files = list(i for i in save_files if ("autosave_server" not in str(i)))
+        target_save = save_files[0]
+
+        self.print_to_server("loading the last manual saved file")
+
+        self.load_requested_save(target_save)
 
     def load_autosave(self, target: int):
         """
         load the targeting autosave file. 
         """
-
-        # save current game and store it for backup
-        self.save_current()
-        self.print_to_server(f"loading the autosave {target} file(s) before...")
-        time.sleep(1)
-
-        # shutdown server
-        self.stop_server()
-
-        # move target 1 before for indexing
-        target -= 1
-
         # get autosave files and sort them in last modified time
         save_files = sorted(Path("factorio/saves/").iterdir(), key=os.path.getmtime, reverse = True)
         save_files = list(i for i in save_files if ("_autosave" in str(i)))
-        target_autosave = save_files[target]
-        shutil.copy2(target_autosave, f"./factorio/saves/{self.save_name}")
+        target_autosave = save_files[target-1]
 
-        # bootup server
-        self.start_server()
+        self.print_to_server(f"loading the autosave {target} file(s) before...")
+
+        self.load_requested_save(target_autosave)
+
         
     def wget_next_msg(self, handle = None):
         """
@@ -309,18 +303,6 @@ class FactorioController:
         save_user = file_name[-1]
         return save_name, save_user, save_time
 
-    def load_requested_save(self, target_save: Path):
-        # save current game and store it for backup
-        self.save_current()
-
-        # shutdown server
-        self.stop_server()
-
-        # get request file and copy to game save folder
-        shutil.copy2(target_save, f"./factorio/saves/{self.save_name}")
-
-        # bootup server
-        self.start_server()
 
     def get_requested_save(self):
         """
@@ -368,7 +350,7 @@ class FactorioController:
     def auto_update(self):
         """get the latest headless server version and check local version"""
         req = Request(
-            url='https://factorio.com/api/latest-releases', 
+            url='https://factorio.com/api/latest-releases',
             headers={'User-Agent': 'Mozilla/5.0'}
         )
         latest = json.loads(urlopen(req).read().decode('utf-8'))["stable"]["headless"]
