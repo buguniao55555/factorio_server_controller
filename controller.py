@@ -4,6 +4,7 @@ import signal
 import sys
 import select
 import os
+import re
 from pathlib import Path
 import shutil
 import json
@@ -75,40 +76,49 @@ class FactorioController:
         Args:
             cmd (str): output commands
         """
+        # user message format:
+        # yyyy-mm-dd hh:mm:ss [JOIN] <username> joined the game
+        # yyyy-mm-dd hh:mm:ss [CHAT] <username>: message
+        # yyyy-mm-dd hh:mm:ss [LEAVE] <username> left the game
 
-        # if unrelated cmd, return
-        if (len(cmd) < 26):
+        # server message format:
+        # yyyy-mm-dd hh:mm:ss [CHAT] \<server\>: message
+
+        pattern = r"(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \[(\w+)\] (.*?) (.*)"
+        match = re.match(pattern, cmd)
+        if match is None:
+            # not a user message or server message, ignore
             return
         
-        # check commands and react to them
-        cmd = cmd.split(" ")
+        _date, _time, msg_type, username, message = match.groups()
+        messages = message.strip().split(" ")
 
         # if command from chat, check if there's any available commands
-        if (cmd[2] == "[CHAT]"):
-            if (cmd[-1] == "!!restart\n"):
+        if (msg_type == "[CHAT]"):
+            if (messages[0] == "!!restart"):
                 self.print_to_server("Receive restart signal. Restarting the server...")
                 time.sleep(1)
                 self.restart_server()
-            elif (cmd[-1] == "!!shutdown\n"):
+
+            elif (messages[0] == "!!shutdown"):
                 self.print_to_server("Receive shutdown signal. Shutting down the server...")
                 time.sleep(1)
                 self.stop_server()
 
             # load the designated autosave
-            elif (cmd[-2] == "!!la" and cmd[-1][:-1].isdigit()):
+            elif (messages[0] == "!!la" and messages[1].isdigit()):
                 self.print_to_server("Receive load_autosave signal. loading autosave...")
-                target = int(cmd[-1][:-1])
+                target = int(messages[1])
                 self.load_autosave(target)
 
             # load the latest autosave
-            elif (cmd[-1][:-1] == "!!la"):
+            elif (messages[0] == "!!la"):
                 self.print_to_server("Receive load_autosave signal. loading autosave...")
                 target = 1
                 self.load_autosave(target)
 
             # print out help menu
-            elif (cmd[-1] == "!!help\n"):
-                username = cmd[3][:-1]
+            elif (messages[0] == "!!help"):
                 self.print_to_server("!!shutdown         ->  shutdown the server\n", username)
                 self.print_to_server("!!restart          ->  restart the server\n", username)
                 self.print_to_server("!!la m             ->  load the autosaved file m files before current save, default m = 1\n", username)
@@ -117,23 +127,39 @@ class FactorioController:
                 self.print_to_server("!!ls ?             ->  check all saved file and restore from them\n", username)
 
             # save current save
-            elif (cmd[-1] == "!!save\n"):
+            elif (messages[0] == "!!save"):
                 self.print_to_server("Receive save signal. Saving current file...")
-                self.save_current("request_save", cmd[3][:-1])
+                self.save_current("request_save", username)
+
+            elif (messages[0] == "!!ls" and len(messages) > 1):
+                if (messages[1] == "?"):
+                    self.get_requested_save()
+                else:
+                    save_files = sorted(Path(f"saves/{self.save_name}").iterdir(), key=os.path.getmtime, reverse = True)
+                    save_files = list(save_files)
+                    target_save = None
+                    for i, save in enumerate(save_files):
+                        if i > 100:
+                            break
+                        save_name, *_ = self.parse_file_name(str(save))
+                        if save_name == messages[1]:
+                            target_save = save
+                            break
+                    if target_save is not None:
+                        self.print_to_server(f"Receive load_last_save signal. Loading the save file {messages[1]}...")
+                        self.load_requested_save(target_save)
+                    else:
+                        self.print_to_server(f"Cannot find the save file {messages[1]}. Please check if the name is correct. ")
 
             # load the latest save
-            elif (cmd[-1] == "!!ls\n"):
+            elif (messages[0] == "!!ls"):
                 self.print_to_server("Receive load_last_save signal. Loading last save...")
                 self.load_last_save()
-            
-            # save current save with custom name
-            elif (cmd[-2] == "!!save"):
-                self.print_to_server("Receive save signal. Saving current file...")
-                self.save_current(cmd[-1][:-1], cmd[3][:-1])
 
-            # print out all saved files and let user to choose which to restore
-            elif (cmd[-2] == "!!ls" and cmd[-1][:-1] == "?"):
-                self.load_requested_save()
+            # save current save with custom name
+            elif (messages[0] == "!!save"):
+                self.print_to_server("Receive save signal. Saving current file...")
+                self.save_current(messages[1], username)
             
         return
 
@@ -281,9 +307,22 @@ class FactorioController:
         save_name = file_name[6:-1]
         save_name = " ".join(save_name)
         save_user = file_name[-1]
-        file_name = f"[color=#66CCFF]{save_name}[/color] saved by [color=#66CCFF]{save_user}[/color] at UTC [color=#66CCFF]{save_time}[/color]"
+        return save_name, save_user, save_time
 
-    def load_requested_save(self):
+    def load_requested_save(self, target_save: Path):
+        # save current game and store it for backup
+        self.save_current()
+
+        # shutdown server
+        self.stop_server()
+
+        # get request file and copy to game save folder
+        shutil.copy2(target_save, f"./factorio/saves/{self.save_name}")
+
+        # bootup server
+        self.start_server()
+
+    def get_requested_save(self):
         """
         load the targeting last save file. 
         """
@@ -299,7 +338,8 @@ class FactorioController:
             # interact with user until selected a save file or manually quit
             self.print_to_server("enter the index to choose the save file, [color=#FF3F3F]n[/color] to view previous page, [color=#FF3F3F]m[/color] to view next page, or [color=#FF3F3F]q[/color] to quit.")
             for i in range(page_index, min(page_index + FILE_PER_PAGE, n_files)):
-                self.print_to_server(f"    [color=#FF3F3F][{i - page_index + 1}][/color]: {self.parse_file_name(save_files[i])}")
+                save_name, save_user, save_time = self.parse_file_name(str(save_files[i]))
+                self.print_to_server(f"    [color=#FF3F3F][{i - page_index + 1}][/color]: [color=#66CCFF]{save_name}[/color] saved by [color=#66CCFF]{save_user}[/color] at UTC [color=#66CCFF]{save_time}[/color]")
             cmd = None
             while True:
                 # get next message until it's from server.stdout and [CHAT]
@@ -321,18 +361,9 @@ class FactorioController:
             if (req_index is not None):
                 target_save = save_files[page_index + req_index - 1]
                 break
+        
+        self.load_requested_save(target_save)
 
-        # save current game and store it for backup
-        self.save_current()
-
-        # shutdown server
-        self.stop_server()
-
-        # get request file and copy to game save folder
-        shutil.copy2(target_save, f"./factorio/saves/{self.save_name}")
-
-        # bootup server
-        self.start_server()
 
     def auto_update(self):
         """get the latest headless server version and check local version"""
