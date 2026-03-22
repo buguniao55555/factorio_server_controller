@@ -139,6 +139,8 @@ class FactorioController:
             self.print_to_server("Receive save signal. Saving current file...")
             self.save_current("request_save", username)
 
+        self.cleanup_exceeding_saves()
+
     def handle_command_la(self, username: str, rest: list):
         if len(rest) > 0 and rest[0].isdigit():
             target_index = int(rest[0])
@@ -238,8 +240,6 @@ class FactorioController:
         else:
             # TODO: what the code should do if saving failed
             print("Saving failed. ")
-
-        self.cleanup_exceeding_saves()
 
     def load_requested_save(self, target_save: Path):
         # save current game and store it for backup
