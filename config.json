@@ -3,5 +3,6 @@
     "port": "34197",
     "server_settings": "server_settings.json", 
     "factorio_directory": "./factorio/bin/x64/factorio",
-    "startup_command": "None"
+    "startup_command": "None",
+    "save_maxsize": 10000000000
 }
